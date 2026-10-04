@@ -55,7 +55,7 @@ PERFIL_2 = dict(
     semente=2024,
     arquivo="instancia_2.xlsx",
     num_escolas=15,
-    ocupacao_min=0.93,
+    ocupacao_min=0.80,
     ocupacao_max=0.95,
     num_clusters=3,
     desvio_cluster=8.0,
@@ -308,7 +308,6 @@ def salvar_instancia(candidatos, escolas, matriz, nome_arquivo):
 # ============================================================
 # GERAÇÃO DE UMA INSTÂNCIA
 # ============================================================
-
 def gerar_instancia(perfil):
     rng = random.Random(perfil["semente"])
 
@@ -316,12 +315,31 @@ def gerar_instancia(perfil):
     desvio = perfil["desvio_cluster"]
 
     for _ in range(MAX_TENTATIVAS):
-        escolas = gerar_escolas(rng, perfil["num_escolas"], centros, desvio)
-        candidatos = gerar_candidatos(
-            rng, escolas,
-            perfil["ocupacao_min"], perfil["ocupacao_max"],
-            perfil["pesos_tipos"], centros, desvio,
+
+        # Na Instância 2, as escolas ficam espalhadas.
+        # Na Instância 1, mantém o comportamento original.
+        if perfil["arquivo"] == "instancia_2.xlsx":
+            centros_escolas = []
+        else:
+            centros_escolas = centros
+
+        escolas = gerar_escolas(
+            rng,
+            perfil["num_escolas"],
+            centros_escolas,
+            desvio
         )
+
+        candidatos = gerar_candidatos(
+            rng,
+            escolas,
+            perfil["ocupacao_min"],
+            perfil["ocupacao_max"],
+            perfil["pesos_tipos"],
+            centros,
+            desvio
+        )
+
         if atribuir_tipos_escolas(rng, escolas, candidatos):
             break
     else:
@@ -330,13 +348,22 @@ def gerar_instancia(perfil):
         )
 
     erros = validar_instancia(candidatos, escolas, perfil)
+
     if erros:
-        raise RuntimeError("Instância inválida:\n" + "\n".join(erros))
+        raise RuntimeError(
+            "Instância inválida:\n" + "\n".join(erros)
+        )
 
     matriz = gerar_matriz_distancias(candidatos, escolas)
-    salvar_instancia(candidatos, escolas, matriz, perfil["arquivo"])
+    salvar_instancia(
+        candidatos,
+        escolas,
+        matriz,
+        perfil["arquivo"]
+    )
 
     cap = calcular_capacidade_total(escolas)
+
     print(
         f"{perfil['arquivo']}: {len(candidatos)} candidatos, "
         f"{len(escolas)} escolas, capacidade {cap} "
@@ -345,8 +372,9 @@ def gerar_instancia(perfil):
 
 
 def main():
-    for perfil in (PERFIL_1, PERFIL_2):
-        gerar_instancia(perfil)
+    # for perfil in (PERFIL_1, PERFIL_2):
+    #     gerar_instancia(perfil)
+    gerar_instancia(PERFIL_2)
 
 
 if __name__ == "__main__":
