@@ -19,7 +19,21 @@ CAPACIDADE_SALA_MAX = 50
 TIPOS_PROVA = ["M1", "M2", "M3e", "M3s", "M3h", "M3d"]
 
 # Região fictícia: grade de 100 x 100 km
-LADO_REGIAO = 99.0
+# LADO_REGIAO = 99.0
+
+# ============================================================
+# REGIÃO GEOGRÁFICA
+# ============================================================
+
+# Região aproximada de Juiz de Fora
+LATITUDE_MIN = -21.81
+LATITUDE_MAX = -21.73
+
+LONGITUDE_MIN = -43.40
+LONGITUDE_MAX = -43.27
+
+LATITUDE_CENTRO = (LATITUDE_MIN + LATITUDE_MAX) / 2
+LONGITUDE_CENTRO = (LONGITUDE_MIN + LONGITUDE_MAX) / 2
 
 # O CEP fictício é derivado da posição (x, y)
 CEP_BASE = 36000000
@@ -57,8 +71,8 @@ PERFIL_2 = dict(
     num_escolas=15,
     ocupacao_min=0.80,
     ocupacao_max=0.95,
-    num_clusters=3,
-    desvio_cluster=8.0,
+    num_clusters=1,
+    desvio_cluster=1.0,
     pesos_tipos=None,
 )
 
@@ -67,30 +81,137 @@ PERFIL_2 = dict(
 # LOCALIZAÇÃO E DISTÂNCIA
 # ============================================================
 
+# def sortear_centros(rng, num_clusters):
+#     return [
+#         (rng.uniform(10, LADO_REGIAO - 10), rng.uniform(10, LADO_REGIAO - 10))
+#         for _ in range(num_clusters)
+#     ]
 def sortear_centros(rng, num_clusters):
+    if num_clusters == 1:
+        return [
+            (
+                LATITUDE_CENTRO,
+                LONGITUDE_CENTRO
+            )
+        ]
+
     return [
-        (rng.uniform(10, LADO_REGIAO - 10), rng.uniform(10, LADO_REGIAO - 10))
+        (
+            rng.uniform(LATITUDE_MIN, LATITUDE_MAX),
+            rng.uniform(LONGITUDE_MIN, LONGITUDE_MAX)
+        )
         for _ in range(num_clusters)
     ]
 
 
-def gerar_local(rng, centros, desvio):
-    """Gera (x, y) e um CEP fictício derivado da posição."""
-    if centros:
-        cx, cy = rng.choice(centros)
-        x = min(max(rng.gauss(cx, desvio), 0.0), LADO_REGIAO)
-        y = min(max(rng.gauss(cy, desvio), 0.0), LADO_REGIAO)
-    else:
-        x = rng.uniform(0, LADO_REGIAO)
-        y = rng.uniform(0, LADO_REGIAO)
+# def gerar_local(rng, centros, desvio):
+#     """Gera (x, y) e um CEP fictício derivado da posição."""
+#     if centros:
+#         cx, cy = rng.choice(centros)
+#         x = min(max(rng.gauss(cx, desvio), 0.0), LADO_REGIAO)
+#         y = min(max(rng.gauss(cy, desvio), 0.0), LADO_REGIAO)
+#     else:
+#         x = rng.uniform(0, LADO_REGIAO)
+#         y = rng.uniform(0, LADO_REGIAO)
 
-    cep = CEP_BASE + int(y) * 1000 + int(x)
-    return {"x": round(x, 2), "y": round(y, 2), "cep": f"{cep:08d}"}
+#     cep = CEP_BASE + int(y) * 1000 + int(x)
+#     return {"x": round(x, 2), "y": round(y, 2), "cep": f"{cep:08d}"}
+
+def gerar_local(rng, centros, desvio):
+    """
+    Gera latitude e longitude.
+    O desvio é informado em quilômetros.
+    """
+
+    # Aproximação:
+    # 1 grau de latitude ≈ 111 km
+    # 1 grau de longitude depende da latitude.
+    
+    if centros:
+        latitude_centro, longitude_centro = rng.choice(centros)
+
+        latitude = (
+            latitude_centro
+            + rng.gauss(0, desvio) / 111
+        )
+
+        longitude = (
+            longitude_centro
+            + rng.gauss(0, desvio) /
+              (111 * math.cos(math.radians(latitude_centro)))
+        )
+
+    else:
+        latitude = rng.uniform(
+            LATITUDE_MIN,
+            LATITUDE_MAX
+        )
+
+        longitude = rng.uniform(
+            LONGITUDE_MIN,
+            LONGITUDE_MAX
+        )
+
+    # Garante que o ponto permaneça dentro da região
+    latitude = min(
+        max(latitude, LATITUDE_MIN),
+        LATITUDE_MAX
+    )
+
+    longitude = min(
+        max(longitude, LONGITUDE_MIN),
+        LONGITUDE_MAX
+    )
+
+    # CEP fictício
+    cep = (
+        CEP_BASE
+        + int(abs(latitude * 100))
+        + int(abs(longitude * 100)) * 100
+    )
+
+    return {
+        "latitude": round(latitude, 6),
+        "longitude": round(longitude, 6),
+        "cep": f"{cep:08d}"
+    }
 
 
 def distancia(a, b):
-    """Distância euclidiana (km) entre dois pontos."""
-    return round(math.hypot(a["x"] - b["x"], a["y"] - b["y"]), 2)
+    """
+    Calcula a distância entre dois pontos geográficos
+    utilizando a fórmula de Haversine.
+
+    Retorna a distância em quilômetros.
+    """
+
+    raio_terra = 6371.0
+
+    lat1 = math.radians(a["latitude"])
+    lat2 = math.radians(b["latitude"])
+
+    delta_lat = math.radians(
+        b["latitude"] - a["latitude"]
+    )
+
+    delta_lon = math.radians(
+        b["longitude"] - a["longitude"]
+    )
+
+    valor = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1)
+        * math.cos(lat2)
+        * math.sin(delta_lon / 2) ** 2
+    )
+
+    distancia_km = (
+        2
+        * raio_terra
+        * math.asin(math.sqrt(valor))
+    )
+
+    return round(distancia_km, 4)
 
 
 # ============================================================
@@ -284,8 +405,8 @@ def salvar_instancia(candidatos, escolas, matriz, nome_arquivo):
                 f"{candidato['id_estudante']}, "
                 f"{candidato['cep']}, "
                 f"{candidato['tipo_prova']}, "
-                f"{candidato['x']}, "
-                f"{candidato['y']}\n"
+                f"{candidato['latitude']}, "
+                f"{candidato['longitude']}\n"
             )
 
         arquivo.write("\n")
@@ -309,8 +430,8 @@ def salvar_instancia(candidatos, escolas, matriz, nome_arquivo):
             arquivo.write(
                 f"{escola['id_escola']}, "
                 f"{escola['cep']}, "
-                f"{escola['x']}, "
-                f"{escola['y']}, "
+                f"{escola['latitude']}, "
+                f"{escola['longitude']}, "
                 f"{escola['numero_salas']}, "
                 f"{capacidades}\n"
             )

@@ -44,8 +44,8 @@ def ler_instancia_txt(nome_arquivo):
                     "id_estudante": partes[0],
                     "cep": partes[1],
                     "tipo_prova": partes[2],
-                    "x": float(partes[3]),
-                    "y": float(partes[4])
+                    "latitude": float(partes[3]),
+                    "longitude": float(partes[4])
                 }
 
                 candidatos.append(candidato)
@@ -60,8 +60,8 @@ def ler_instancia_txt(nome_arquivo):
                 escola = {
                     "id_escola": partes[0],
                     "cep": partes[1],
-                    "x": float(partes[2]),
-                    "y": float(partes[3]),
+                    "latitude": float(partes[2]),
+                    "longitude": float(partes[3]),
                     "numero_salas": int(partes[4])
                 }
 
@@ -74,6 +74,9 @@ def gerar_visualizacao(nome_txt, nome_imagem):
 
     candidatos, escolas = ler_instancia_txt(nome_txt)
 
+    if not candidatos and not escolas:
+        raise ValueError(f"A instância '{nome_txt}' não contém candidatos nem escolas.")
+
     plt.figure(figsize=(9, 7))
 
     # ============================================================
@@ -81,8 +84,8 @@ def gerar_visualizacao(nome_txt, nome_imagem):
     # ============================================================
 
     plt.scatter(
-        [c["x"] for c in candidatos],
-        [c["y"] for c in candidatos],
+        [c["longitude"] for c in candidatos],
+        [c["latitude"] for c in candidatos],
         s=8,
         alpha=0.35,
         label="Candidatos"
@@ -93,8 +96,8 @@ def gerar_visualizacao(nome_txt, nome_imagem):
     # ============================================================
 
     plt.scatter(
-        [e["x"] for e in escolas],
-        [e["y"] for e in escolas],
+        [e["longitude"] for e in escolas],
+        [e["latitude"] for e in escolas],
         s=80,
         marker="^",
         label="Escolas"
@@ -104,7 +107,7 @@ def gerar_visualizacao(nome_txt, nome_imagem):
     for escola in escolas:
         plt.annotate(
             escola["id_escola"],
-            (escola["x"], escola["y"]),
+            (escola["longitude"], escola["latitude"]),
             xytext=(5, 5),
             textcoords="offset points",
             fontsize=8
@@ -114,12 +117,32 @@ def gerar_visualizacao(nome_txt, nome_imagem):
     # CONFIGURAÇÃO DO GRÁFICO
     # ============================================================
 
-    plt.xlabel("Posição X (km)")
-    plt.ylabel("Posição Y (km)")
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
     plt.title(f"Distribuição - {nome_txt}")
 
-    plt.xlim(0, 99)
-    plt.ylim(0, 99)
+    longitudes = (
+        [c["longitude"] for c in candidatos]
+        + [e["longitude"] for e in escolas]
+    )
+    latitudes = (
+        [c["latitude"] for c in candidatos]
+        + [e["latitude"] for e in escolas]
+    )
+
+    # As instâncias usam latitude/longitude reais, não mais a antiga
+    # grade fictícia de 0 a 99.
+    margem_longitude = max((max(longitudes) - min(longitudes)) * 0.05, 0.001)
+    margem_latitude = max((max(latitudes) - min(latitudes)) * 0.05, 0.001)
+
+    plt.xlim(
+        min(longitudes) - margem_longitude,
+        max(longitudes) + margem_longitude
+    )
+    plt.ylim(
+        min(latitudes) - margem_latitude,
+        max(latitudes) + margem_latitude
+    )
 
     plt.grid(True, alpha=0.25)
     plt.legend()
