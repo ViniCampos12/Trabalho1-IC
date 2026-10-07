@@ -41,7 +41,7 @@ MAX_TENTATIVAS = 2000
 
 PERFIL_1 = dict(
     semente=42,
-    arquivo="instancia_1.xlsx",
+    arquivo="instancia_1.txt",
     num_escolas=15,
     ocupacao_min=0.80,
     ocupacao_max=0.95,
@@ -53,7 +53,7 @@ PERFIL_1 = dict(
 # EXEMPLO: troque pela característica que o grupo escolher.
 PERFIL_2 = dict(
     semente=2024,
-    arquivo="instancia_2.xlsx",
+    arquivo="instancia_2.txt",
     num_escolas=15,
     ocupacao_min=0.80,
     ocupacao_max=0.95,
@@ -257,52 +257,85 @@ def validar_instancia(candidatos, escolas, perfil):
 # ============================================================
 # EXPORTAÇÃO
 # ============================================================
-
 def salvar_instancia(candidatos, escolas, matriz, nome_arquivo):
-    df_candidatos = pd.DataFrame(candidatos)[
-        ["id_estudante", "cep", "x", "y", "tipo_prova"]
-    ]
+    """
+    Salva a instância em um único arquivo TXT seguindo o modelo fornecido.
+    """
 
-    df_escolas = pd.DataFrame([
-        {
-            "id_escola": e["id_escola"],
-            "cep": e["cep"],
-            "x": e["x"],
-            "y": e["y"],
-            "numero_salas": e["numero_salas"],
-            "capacidade_total": e["capacidade_total"],
-            "tipo_prova": e["tipo_prova"],
-        }
-        for e in escolas
-    ])
+    with open(nome_arquivo, "w", encoding="utf-8") as arquivo:
 
-    df_salas = pd.DataFrame([
-        {
-            "id_escola": e["id_escola"],
-            "id_sala": f"{e['id_escola']}-S{j:02d}",
-            "capacidade_sala": cap,
-        }
-        for e in escolas
-        for j, cap in enumerate(e["capacidade_salas"], start=1)
-    ])
+        # ========================================================
+        # INFORMAÇÕES GERAIS
+        # ========================================================
 
-    df_distancias = pd.DataFrame(matriz)
+        arquivo.write(f"NUM_CANDIDATOS: {len(candidatos)}\n")
+        arquivo.write(f"NUM_ESCOLAS: {len(escolas)}\n\n")
 
-    # Resumo neutro: apenas os itens pedidos no enunciado
-    df_resumo = pd.DataFrame(
-        [
-            ("Quantidade de candidatos", len(candidatos)),
-            ("Quantidade de escolas", len(escolas)),
-        ],
-        columns=["Informação", "Valor"],
-    )
+        # ========================================================
+        # CANDIDATOS
+        # ========================================================
 
-    with pd.ExcelWriter(nome_arquivo, engine="openpyxl") as w:
-        df_resumo.to_excel(w, sheet_name="Resumo", index=False)
-        df_candidatos.to_excel(w, sheet_name="Candidatos", index=False)
-        df_escolas.to_excel(w, sheet_name="Escolas", index=False)
-        df_salas.to_excel(w, sheet_name="Salas", index=False)
-        df_distancias.to_excel(w, sheet_name="Matriz_Distancias", index=False)
+        arquivo.write(
+            "# CANDIDATOS (id, CEP, tipo_prova, latitude, longitude)\n"
+        )
+
+        for candidato in candidatos:
+            arquivo.write(
+                f"{candidato['id_estudante']}, "
+                f"{candidato['cep']}, "
+                f"{candidato['tipo_prova']}, "
+                f"{candidato['x']}, "
+                f"{candidato['y']}\n"
+            )
+
+        arquivo.write("\n")
+
+        # ========================================================
+        # ESCOLAS
+        # ========================================================
+
+        arquivo.write(
+            "# ESCOLAS (id, CEP, latitude, longitude, "
+            "num_salas, capacidades_salas)\n"
+        )
+
+        for escola in escolas:
+
+            capacidades = ";".join(
+                str(capacidade)
+                for capacidade in escola["capacidade_salas"]
+            )
+
+            arquivo.write(
+                f"{escola['id_escola']}, "
+                f"{escola['cep']}, "
+                f"{escola['x']}, "
+                f"{escola['y']}, "
+                f"{escola['numero_salas']}, "
+                f"{capacidades}\n"
+            )
+
+        arquivo.write("\n")
+
+        # ========================================================
+        # MATRIZ DE DISTÂNCIAS
+        # ========================================================
+
+        arquivo.write(
+            "# MATRIZ_DISTANCIAS "
+            "(linhas=candidatos, colunas=escolas, em km)\n"
+        )
+
+        for linha in matriz:
+
+            distancias = [
+                str(linha[escola["id_escola"]])
+                for escola in escolas
+            ]
+
+            arquivo.write(
+                ", ".join(distancias) + "\n"
+            )
 
 
 # ============================================================
@@ -318,7 +351,7 @@ def gerar_instancia(perfil):
 
         # Na Instância 2, as escolas ficam espalhadas.
         # Na Instância 1, mantém o comportamento original.
-        if perfil["arquivo"] == "instancia_2.xlsx":
+        if perfil["arquivo"] == "instancia_2.txt":
             centros_escolas = []
         else:
             centros_escolas = centros
@@ -374,7 +407,7 @@ def gerar_instancia(perfil):
 def main():
     # for perfil in (PERFIL_1, PERFIL_2):
     #     gerar_instancia(perfil)
-    gerar_instancia(PERFIL_2)
+    gerar_instancia(PERFIL_1)
 
 
 if __name__ == "__main__":
