@@ -16,6 +16,9 @@ SALAS_MAX = 10
 CAPACIDADE_SALA_MIN = 30
 CAPACIDADE_SALA_MAX = 50
 
+NUM_ESCOLAS_MIN = 10
+NUM_ESCOLAS_MAX = 20
+
 TIPOS_PROVA = ["M1", "M2", "M3e", "M3s", "M3h", "M3d"]
 
 # Região fictícia: grade de 100 x 100 km
@@ -239,7 +242,6 @@ def gerar_escolas(rng, num_escolas, centros, desvio):
             "numero_salas": len(salas),
             "capacidade_total": sum(salas),
             "capacidade_salas": salas,
-            "tipo_prova": None,  # definido depois da geração dos candidatos
         }
         escola.update(gerar_local(rng, centros, desvio))
         escolas.append(escola)
@@ -275,56 +277,56 @@ def gerar_candidatos(rng, escolas, ocupacao_min, ocupacao_max,
 # TIPOS DAS ESCOLAS E FACTIBILIDADE
 # ============================================================
 
-def calcular_demanda_por_tipo(candidatos):
-    demanda = {t: 0 for t in TIPOS_PROVA}
-    for c in candidatos:
-        demanda[c["tipo_prova"]] += 1
-    return demanda
+# def calcular_demanda_por_tipo(candidatos):
+#     demanda = {t: 0 for t in TIPOS_PROVA}
+#     for c in candidatos:
+#         demanda[c["tipo_prova"]] += 1
+#     return demanda
 
 
-def calcular_capacidade_por_tipo(escolas):
-    capacidade = {t: 0 for t in TIPOS_PROVA}
-    for e in escolas:
-        capacidade[e["tipo_prova"]] += e["capacidade_total"]
-    return capacidade
+# def calcular_capacidade_por_tipo(escolas):
+#     capacidade = {t: 0 for t in TIPOS_PROVA}
+#     for e in escolas:
+#         capacidade[e["tipo_prova"]] += e["capacidade_total"]
+#     return capacidade
 
 
-def verificar_capacidade_por_tipo(candidatos, escolas):
-    demanda = calcular_demanda_por_tipo(candidatos)
-    capacidade = calcular_capacidade_por_tipo(escolas)
-    return all(demanda[t] <= capacidade[t] for t in TIPOS_PROVA)
+# def verificar_capacidade_por_tipo(candidatos, escolas):
+#     demanda = calcular_demanda_por_tipo(candidatos)
+#     capacidade = calcular_capacidade_por_tipo(escolas)
+#     return all(demanda[t] <= capacidade[t] for t in TIPOS_PROVA)
 
 
-def atribuir_tipos_escolas(rng, escolas, candidatos):
-    """
-    Atribui um tipo de prova a cada escola de forma construtiva:
-    para cada tipo (do mais demandado ao menos), reserva escolas
-    aleatórias até a capacidade cobrir a demanda. As escolas que
-    sobram recebem um tipo aleatório.
-    Retorna True se conseguiu; False se o sorteio não foi factível.
-    """
-    demanda = calcular_demanda_por_tipo(candidatos)
-    tipos = sorted(
-        (t for t in TIPOS_PROVA if demanda[t] > 0),
-        key=lambda t: -demanda[t],
-    )
+# def atribuir_tipos_escolas(rng, escolas, candidatos):
+#     """
+#     Atribui um tipo de prova a cada escola de forma construtiva:
+#     para cada tipo (do mais demandado ao menos), reserva escolas
+#     aleatórias até a capacidade cobrir a demanda. As escolas que
+#     sobram recebem um tipo aleatório.
+#     Retorna True se conseguiu; False se o sorteio não foi factível.
+#     """
+#     demanda = calcular_demanda_por_tipo(candidatos)
+#     tipos = sorted(
+#         (t for t in TIPOS_PROVA if demanda[t] > 0),
+#         key=lambda t: -demanda[t],
+#     )
 
-    livres = escolas.copy()
-    rng.shuffle(livres)
+#     livres = escolas.copy()
+#     rng.shuffle(livres)
 
-    for tipo in tipos:
-        cap = 0
-        while cap < demanda[tipo]:
-            if not livres:
-                return False
-            e = livres.pop()
-            e["tipo_prova"] = tipo
-            cap += e["capacidade_total"]
+#     for tipo in tipos:
+#         cap = 0
+#         while cap < demanda[tipo]:
+#             if not livres:
+#                 return False
+#             e = livres.pop()
+#             e["tipo_prova"] = tipo
+#             cap += e["capacidade_total"]
 
-    for e in livres:
-        e["tipo_prova"] = rng.choice(TIPOS_PROVA)
+#     for e in livres:
+#         e["tipo_prova"] = rng.choice(TIPOS_PROVA)
 
-    return verificar_capacidade_por_tipo(candidatos, escolas)
+#     return verificar_capacidade_por_tipo(candidatos, escolas)
 
 
 # ============================================================
@@ -345,34 +347,74 @@ def gerar_matriz_distancias(candidatos, escolas):
 # VALIDAÇÃO
 # ============================================================
 
-def validar_instancia(candidatos, escolas, perfil):
+def validar_instancia(candidatos, escolas, matriz, perfil):
+    """Valida os dados gerados antes de exportar a instância."""
     erros = []
-    cap_total = calcular_capacidade_total(escolas)
-    ocupacao = len(candidatos) / cap_total
 
-    if not (10 <= len(escolas) <= 20):
-        erros.append("Número de escolas fora de 10-20.")
+    # --------------------------------------------------------
+    # Validação dos parâmetros do perfil
+    # --------------------------------------------------------
+    num_escolas_perfil = perfil.get("num_escolas")
+    ocupacao_min = perfil.get("ocupacao_min")
+    ocupacao_max = perfil.get("ocupacao_max")
+    num_clusters = perfil.get("num_clusters")
+    desvio_cluster = perfil.get("desvio_cluster")
+    pesos_tipos = perfil.get("pesos_tipos")
 
-    for e in escolas:
-        if not (CAPACIDADE_ESCOLA_MIN <= e["capacidade_total"]
-                <= CAPACIDADE_ESCOLA_MAX):
-            erros.append(f"{e['id_escola']}: capacidade fora de 200-500.")
-        if e["capacidade_total"] != sum(e["capacidade_salas"]):
-            erros.append(f"{e['id_escola']}: soma das salas inconsistente.")
-        if e["tipo_prova"] not in TIPOS_PROVA:
-            erros.append(f"{e['id_escola']}: tipo inválido.")
+    if not isinstance(num_escolas_perfil, int):
+        erros.append("O parâmetro num_escolas deve ser um inteiro.")
+    elif not (NUM_ESCOLAS_MIN <= num_escolas_perfil <= NUM_ESCOLAS_MAX):
+        erros.append(
+            f"O parâmetro num_escolas deve estar entre "
+            f"{NUM_ESCOLAS_MIN} e {NUM_ESCOLAS_MAX}."
+        )
 
-    if not (0.80 <= ocupacao <= 0.95):
-        erros.append(f"Ocupação {ocupacao:.2%} fora de 80%-95%.")
+    if (not isinstance(ocupacao_min, (int, float))
+            or not isinstance(ocupacao_max, (int, float))
+            or not (0 < ocupacao_min <= ocupacao_max <= 1)):
+        erros.append(
+            "Os parâmetros ocupacao_min e ocupacao_max devem satisfazer "
+            "0 < ocupacao_min <= ocupacao_max <= 1."
+        )
 
-    if not verificar_capacidade_por_tipo(candidatos, escolas):
-        erros.append("Capacidade insuficiente para algum tipo de prova.")
+    if not isinstance(num_clusters, int) or num_clusters < 0:
+        erros.append("O parâmetro num_clusters deve ser um inteiro não negativo.")
 
-    ids = [c["id_estudante"] for c in candidatos]
-    if len(ids) != len(set(ids)):
-        erros.append("Identificadores de candidatos duplicados.")
+    if not isinstance(desvio_cluster, (int, float)) or desvio_cluster < 0:
+        erros.append("O parâmetro desvio_cluster deve ser um número não negativo.")
 
-    return erros
+    if pesos_tipos is not None:
+        if (len(pesos_tipos) != len(TIPOS_PROVA)
+                or any(not isinstance(p, (int, float)) or p < 0
+                       for p in pesos_tipos)
+                or sum(pesos_tipos) <= 0):
+            erros.append(
+                "pesos_tipos deve ser None ou conter seis pesos não negativos, "
+                "com soma maior que zero."
+            )
+
+    # --------------------------------------------------------
+    # Validação das escolas e das salas
+    # --------------------------------------------------------
+    if not (NUM_ESCOLAS_MIN <= len(escolas) <= NUM_ESCOLAS_MAX):
+        erros.append(
+            f"A quantidade de escolas ({len(escolas)}) deve estar entre "
+            f"{NUM_ESCOLAS_MIN} e {NUM_ESCOLAS_MAX}."
+        )
+
+    if isinstance(num_escolas_perfil, int) and len(escolas) != num_escolas_perfil:
+        erros.append(
+            "A quantidade de escolas geradas não corresponde ao parâmetro "
+            "num_escolas do perfil."
+        )
+
+    ids_escolas = [e.get("id_escola") for e in escolas]
+    if len(ids_escolas) != len(set(ids_escolas)):
+        erros.append("Identificadores de escolas duplicados.")
+
+    for escola in escolas:
+        identificador = escola.get("id_escola", "Escola sem ID")
+        salas = escola.get("capacidade_salas", [])
 
 
 # ============================================================
@@ -494,21 +536,25 @@ def gerar_instancia(perfil):
             desvio
         )
 
-        if atribuir_tipos_escolas(rng, escolas, candidatos):
+        matriz = gerar_matriz_distancias(candidatos, escolas)
+
+        erros = validar_instancia(candidatos, escolas,matriz,perfil)
+
+        if not erros:
             break
     else:
         raise RuntimeError(
             "Não foi possível gerar uma instância factível com este perfil."
         )
 
-    erros = validar_instancia(candidatos, escolas, perfil)
+    # erros = validar_instancia(candidatos, escolas, perfil)
 
-    if erros:
-        raise RuntimeError(
-            "Instância inválida:\n" + "\n".join(erros)
-        )
+    # if erros:
+    #     raise RuntimeError(
+    #         "Instância inválida:\n" + "\n".join(erros)
+    #     )
 
-    matriz = gerar_matriz_distancias(candidatos, escolas)
+    
     salvar_instancia(
         candidatos,
         escolas,
@@ -526,9 +572,9 @@ def gerar_instancia(perfil):
 
 
 def main():
-    # for perfil in (PERFIL_1, PERFIL_2):
-    #     gerar_instancia(perfil)
-    gerar_instancia(PERFIL_1)
+    for perfil in (PERFIL_1, PERFIL_2):
+        gerar_instancia(perfil)
+    # gerar_instancia(PERFIL_1)
 
 
 if __name__ == "__main__":
