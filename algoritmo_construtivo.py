@@ -1,3 +1,9 @@
+"""Heurística construtiva para alocação de candidatos em escolas.
+
+Este módulo contém apenas a lógica da solução construtiva. A leitura da
+instância e a execução pelo terminal ficam em main.py.
+"""
+
 import random
 from collections import defaultdict
 
@@ -304,19 +310,3 @@ class SolucaoConstrutiva:
                 ],
             }
         return copia
-
-
-# Exemplo de uso:
-# construtiva = SolucaoConstrutiva(
-#     candidatos, escolas, matriz_distancias,
-#     max_tipos_por_escola=2,
-#     semente=42,
-#     max_tentativas=10,
-# )
-# custo, alocacoes, nao_alocados = construtiva.resolver()
-# if custo is None:
-#     print("Não foi encontrada uma solução completa.")
-#     print("Candidatos não alocados:", len(nao_alocados))
-# else:
-#     print("Solução viável! Distância total:", custo)
-#     print("Candidatos alocados:", len(alocacoes))
