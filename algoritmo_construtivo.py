@@ -1,312 +1,427 @@
-"""Heurística construtiva para alocação de candidatos em escolas.
+"""
+Heurística construtiva para o Problema de Localização de Locais de Prova.
 
-Este módulo contém apenas a lógica da solução construtiva. A leitura da
-instância e a execução pelo terminal ficam em main.py.
+Variante com SALAS:
+  * cada sala de cada escola recebe UM único tipo de prova;
+  * cada escola pode ter no máximo K tipos distintos entre suas salas;
+  * o algoritmo decide (i) quais escolas/salas usar, (ii) o tipo de cada sala
+    e (iii) a escola/sala de cada candidato, minimizando a distância total.
+
+Resumo da estratégia (ver relatório):
+  1. Agrupa candidatos em "unidades de demanda" (CEP, tipo_prova).
+  2. Ordena as unidades por ARREPENDIMENTO (regret): d(2ª escola) - d(1ª escola).
+     Quem mais perde se não for atendido na melhor escola é atendido primeiro.
+  3. Para cada unidade percorre as escolas da mais próxima à mais distante:
+       a) completa salas já abertas com o mesmo tipo (best-fit);
+       b) abre novas salas se o limite K permitir (escolha da sala controla
+          a fragmentação de capacidade);
+       c) se ainda sobrar gente, a unidade é DIVIDIDA para a próxima escola.
+  4. Look-ahead: evita gastar o último "slot" de tipo de uma escola com uma
+     sala que ficaria muito vazia (primeira passada "estrita").
+  5. Reparo por ejeção: se sobrar candidato sem vaga, esvazia uma sala de
+     outro tipo, realoca seus ocupantes em outras escolas e usa a sala.
+  6. Múltiplas tentativas (GRASP): a 1ª é determinística; as demais sorteiam a
+     próxima unidade dentro de uma Lista Restrita de Candidatos (RCL).
+     Guarda-se a melhor tentativa.
+
+Interface (usada por main.py):
+    SolucaoConstrutiva(candidatos, escolas, matriz_distancias,
+                       max_tipos_por_escola, semente, max_tentativas)
+    .resolver() -> (custo | None, alocacoes, nao_alocados)
+        custo        : distância total (km) se TODOS foram alocados, senão None
+        alocacoes    : {id_candidato: (id_escola, id_sala)}
+        nao_alocados : lista de ids de candidatos sem vaga
+    .K, .candidatos, .escolas  (usados para imprimir/salvar o resultado)
+    .historico                 : estatísticas de cada tentativa (para o relatório)
 """
 
+import copy
+import math
 import random
-from collections import defaultdict
+import time
 
 
 class SolucaoConstrutiva:
-    """Heurística construtiva gulosa com múltiplas tentativas.
 
-    Estruturas esperadas:
-      candidatos: lista de dicts com 'id_estudante' e 'tipo_prova'.
-      escolas: lista de dicts com 'id_escola' e 'capacidade_salas' (lista de capacidades).
-      matriz_distancias: dict no formato distancias[id_estudante][id_escola] = distância.
-      max_tipos_por_escola: máximo de tipos distintos permitidos em cada escola.
-
-    Cada sala recebe no máximo um tipo de prova. O tipo é definido quando o
-    primeiro candidato é alocado à sala. A heurística tenta várias ordens de
-    construção, mas não garante encontrar uma solução para toda instância viável.
-    """
-
-    def __init__(
-        self,
-        candidatos,
-        escolas,
-        matriz_distancias,
-        max_tipos_por_escola=2,
-        semente=42,
-        max_tentativas=10,
-    ):
-        self.candidatos = candidatos
-        self.escolas_raw = escolas
-        self.distancias = matriz_distancias
-        self.K = max_tipos_por_escola
-        self.semente = semente
-        self.max_tentativas = max_tentativas
-
-        if not isinstance(self.K, int) or self.K < 1:
-            raise ValueError("max_tipos_por_escola deve ser um inteiro maior ou igual a 1.")
-        if not isinstance(self.max_tentativas, int) or self.max_tentativas < 1:
-            raise ValueError("max_tentativas deve ser um inteiro maior ou igual a 1.")
-
-        self._validar_dados()
-        self._reiniciar_estado()
-
-    def _validar_dados(self):
-        """Verifica campos e consistência básica antes de executar a heurística."""
-        ids_candidatos = [c.get("id_estudante") for c in self.candidatos]
-        ids_escolas = [e.get("id_escola") for e in self.escolas_raw]
-
-        if not self.escolas_raw:
-            raise ValueError("É necessário informar pelo menos uma escola.")
-        if not self.candidatos:
-            raise ValueError("É necessário informar pelo menos um candidato.")
-        if any(i is None for i in ids_candidatos):
-            raise ValueError("Todo candidato deve possuir 'id_estudante'.")
-        if any(i is None for i in ids_escolas):
-            raise ValueError("Toda escola deve possuir 'id_escola'.")
-        if len(ids_candidatos) != len(set(ids_candidatos)):
-            raise ValueError("Existem identificadores de candidatos duplicados.")
-        if len(ids_escolas) != len(set(ids_escolas)):
-            raise ValueError("Existem identificadores de escolas duplicados.")
-
-        for c in self.candidatos:
-            if not c.get("tipo_prova"):
-                raise ValueError(
-                    f"Candidato {c['id_estudante']} não possui 'tipo_prova'."
-                )
-            id_c = c["id_estudante"]
-            if id_c not in self.distancias:
-                raise ValueError(f"Não há linha de distâncias para o candidato {id_c}.")
-            for id_e in ids_escolas:
-                if id_e not in self.distancias[id_c]:
-                    raise ValueError(
-                        f"Distância ausente entre candidato {id_c} e escola {id_e}."
-                    )
-                try:
-                    d = float(self.distancias[id_c][id_e])
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"Distância inválida entre candidato {id_c} e escola {id_e}."
-                    )
-                if d < 0 or d != d or d == float("inf"):
-                    raise ValueError(
-                        f"Distância deve ser finita e não negativa: candidato {id_c}, escola {id_e}."
-                    )
-
-        for e in self.escolas_raw:
-            capacidades = e.get("capacidade_salas")
-            if not isinstance(capacidades, (list, tuple)) or not capacidades:
-                raise ValueError(
-                    f"Escola {e['id_escola']} deve possuir uma lista não vazia em 'capacidade_salas'."
-                )
-            for cap in capacidades:
-                if not isinstance(cap, (int, float)) or cap <= 0:
-                    raise ValueError(
-                        f"Capacidade de sala inválida na escola {e['id_escola']}: {cap}."
-                    )
-
-    def _reiniciar_estado(self):
-        """Limpa todas as alocações, permitindo iniciar uma nova tentativa."""
-        self.escolas = {}
-        for e in self.escolas_raw:
-            self.escolas[e["id_escola"]] = {
-                "tipos_atribuidos": set(),
-                "salas": [
-                    {
-                        "id_sala": indice,
-                        "capacidade": capacidade,
-                        "ocupacao": 0,
-                        "tipo_prova": None,
-                        "candidatos": [],
-                    }
-                    for indice, capacidade in enumerate(e["capacidade_salas"])
-                ],
-            }
-        self.alocacoes = {}  # id_candidato -> (id_escola, id_sala)
-        self.nao_alocados = []
-        self.solucao_viavel = False
-
-    def _distancia_media(self, candidato):
-        id_c = candidato["id_estudante"]
-        return sum(
-            float(self.distancias[id_c][id_e]) for id_e in self.escolas
-        ) / len(self.escolas)
-
-    def _ordenar_candidatos(self, rng, tentativa):
-        """Prioriza tipos de maior demanda e candidatos geograficamente isolados.
-
-        Em tentativas posteriores, pequenas perturbações mudam a ordem dos tipos
-        e dos candidatos para explorar construções alternativas.
+    # ------------------------------------------------------------------
+    # Inicialização e pré-processamento
+    # ------------------------------------------------------------------
+    def __init__(self, candidatos, escolas, matriz_distancias,
+                 max_tipos_por_escola=2, semente=42, max_tentativas=10,
+                 alfa=0.05, limite_desperdicio=None,
+                 max_ejecoes=50, escolas_reparo=5):
         """
-        grupos = defaultdict(list)
-        for candidato in self.candidatos:
-            grupos[candidato["tipo_prova"]].append(candidato)
+        Parâmetros extras (todos opcionais, úteis para experimentos):
+          alfa               : tamanho relativo da RCL (0 = guloso puro).
+                               Com 1000 unidades restantes e alfa=0.05, o
+                               próximo é sorteado entre as 50 primeiras.
+          limite_desperdicio : look-ahead. Ao usar o ÚLTIMO slot de tipo de
+                               uma escola (K>=2), a nova sala só é aberta na
+                               1ª passada se desperdiçar no máximo essa fração
+                               da capacidade. PADRÃO = None (desligado): nos
+                               testes, valores baixos fazem as escolas ficarem
+                               com 1 tipo só e aumentam muito a distância.
+                               Experimente 0.8-0.9 e compare no relatório.
+          max_ejecoes        : máximo de ejeções por unidade no reparo.
+          escolas_reparo     : no reparo, só as N escolas mais próximas da
+                               unidade são testadas (limita o custo).
+        """
+        self.candidatos = candidatos
+        self.K = max_tipos_por_escola
+        self.max_tentativas = max_tentativas
+        self.alfa = alfa
+        self.limite_desperdicio = limite_desperdicio
+        self.max_ejecoes = max_ejecoes
+        self.escolas_reparo = escolas_reparo
+        self.rng = random.Random(semente)
+        self.dist = matriz_distancias
+        self._escolas_base = escolas
 
-        tipos = list(grupos)
-        # A primeira tentativa prioriza estritamente os tipos mais numerosos.
-        # Nas demais, o ruído pode alterar a ordem de tipos com demandas próximas.
-        escala = max(1, len(self.candidatos)) * (0.015 * tentativa)
-        tipos.sort(
-            key=lambda tipo: (
-                len(grupos[tipo]) + rng.uniform(-escala, escala),
-                rng.random(),
-            ),
-            reverse=True,
-        )
+        self._tipo_cand = {c["id_estudante"]: c["tipo_prova"] for c in candidatos}
+        self._cache_ordem_cand = {}      # ordem de escolas por candidato (reparo)
+        self.historico = []
+        self.avisos = []
 
-        ordenados = []
-        for tipo in tipos:
-            grupo = list(grupos[tipo])
-            if tentativa == 0:
-                grupo.sort(key=self._distancia_media, reverse=True)
+        # Escolas com capacidade total zero nunca são úteis.
+        self._escolas_uteis = [
+            e["id_escola"] for e in escolas if sum(e["capacidade_salas"]) > 0
+        ]
+        self._construir_unidades()
+        self._iniciar_estado()
+
+    def _construir_unidades(self):
+        """Agrupa candidatos por (CEP, tipo) e calcula a ordem de escolas e o regret.
+
+        Candidatos com mesmo CEP estão no mesmo ponto, logo têm as mesmas
+        distâncias; usamos o primeiro do grupo como representante para ordenar
+        as escolas. O custo final, porém, é sempre somado candidato a candidato.
+        """
+        grupos = {}
+        for c in self.candidatos:
+            grupos.setdefault((c["cep"], c["tipo_prova"]), []).append(c["id_estudante"])
+
+        self.unidades = []
+        for (cep, tipo), ids in grupos.items():
+            rep = self.dist[ids[0]]
+            ordem = sorted(self._escolas_uteis, key=lambda j: rep[j])
+            if len(ordem) >= 2:
+                regret = rep[ordem[1]] - rep[ordem[0]]
             else:
-                # Ruído limitado para variar a ordem sem ignorar totalmente o
-                # critério de priorizar candidatos mais isolados.
-                max_media = max((self._distancia_media(c) for c in grupo), default=1)
-                fator = max(max_media, 1.0) * min(0.20, 0.03 * tentativa)
-                grupo.sort(
-                    key=lambda c: self._distancia_media(c) + rng.uniform(-fator, fator),
-                    reverse=True,
-                )
-            ordenados.extend(grupo)
-        return ordenados
+                regret = 1e9  # só uma escola: não há alternativa, prioridade máxima
+            self.unidades.append({
+                "cep": cep, "tipo": tipo, "ids": ids,
+                "ordem": ordem, "regret": regret,
+            })
 
-    def _escolas_por_distancia(self, candidato, rng):
-        id_c = candidato["id_estudante"]
-        escolas = list(self.escolas)
-        # Aleatoriza apenas empates exatos para não repetir sempre a mesma escolha.
-        rng.shuffle(escolas)
-        escolas.sort(key=lambda id_e: float(self.distancias[id_c][id_e]))
-        return escolas
+    def _iniciar_estado(self):
+        """Cria uma solução vazia: todas as salas livres, sem tipo."""
+        self.escolas = {}
+        for e in self._escolas_base:
+            salas = [{
+                "id_sala": f"{e['id_escola']}-S{r + 1}",
+                "capacidade": cap,
+                "ocupacao": 0,
+                "tipo_prova": None,
+                "candidatos": [],
+            } for r, cap in enumerate(e["capacidade_salas"])]
+            self.escolas[e["id_escola"]] = {"salas": salas, "tipos_atribuidos": set()}
+        self._aloc = {}   # id_candidato -> (id_escola, índice_da_sala)
 
-    def _salas_viaveis(self, escola, tipo):
-        """Prefere salas já destinadas ao tipo, para preservar salas livres."""
-        salas_compativeis = [
-            s for s in escola["salas"]
+    def _verificar_viabilidade_global(self):
+        """Teste necessário (não suficiente): demanda total <= capacidade total."""
+        demanda = len(self.candidatos)
+        capacidade = sum(sum(e["capacidade_salas"]) for e in self._escolas_base)
+        if demanda > capacidade:
+            self.avisos.append(
+                f"Inviável: {demanda} candidatos para {capacidade} lugares."
+            )
+        elif demanda > 0.95 * capacidade:
+            self.avisos.append(
+                "Instância muito apertada (>95% da capacidade): a fragmentação "
+                "por tipo/salas pode impedir uma solução completa."
+            )
+
+    # ------------------------------------------------------------------
+    # Operações básicas sobre o estado (todas mantêm as invariantes)
+    # ------------------------------------------------------------------
+    def _pode_abrir(self, j, tipo):
+        """Escola j pode receber uma sala do tipo dado sem violar o limite K?"""
+        tipos = self.escolas[j]["tipos_atribuidos"]
+        return tipo in tipos or len(tipos) < self.K
+
+    def _colocar(self, i, j, r):
+        """Coloca o candidato i na sala r da escola j (fixa o tipo da sala se livre)."""
+        sala = self.escolas[j]["salas"][r]
+        tipo = self._tipo_cand[i]
+        if sala["ocupacao"] == 0:
+            sala["tipo_prova"] = tipo
+        sala["candidatos"].append(i)
+        sala["ocupacao"] += 1
+        self.escolas[j]["tipos_atribuidos"].add(tipo)
+        self._aloc[i] = (j, r)
+
+    def _remover(self, i):
+        """Remove o candidato i da sala atual; sala vazia volta a ficar sem tipo."""
+        j, r = self._aloc.pop(i)
+        sala = self.escolas[j]["salas"][r]
+        sala["candidatos"].remove(i)
+        sala["ocupacao"] -= 1
+        if sala["ocupacao"] == 0:
+            sala["tipo_prova"] = None
+            self.escolas[j]["tipos_atribuidos"] = {
+                s["tipo_prova"] for s in self.escolas[j]["salas"] if s["ocupacao"] > 0
+            }
+
+    def _preencher_sala(self, j, r, pendentes):
+        """Move candidatos de 'pendentes' para a sala até lotá-la ou acabarem."""
+        sala = self.escolas[j]["salas"][r]
+        while pendentes and sala["ocupacao"] < sala["capacidade"]:
+            self._colocar(pendentes.pop(), j, r)
+
+    def _custo_atual(self):
+        return sum(self.dist[i][j] for i, (j, _) in self._aloc.items())
+
+    # ------------------------------------------------------------------
+    # Passo 3: alocação de uma unidade de demanda
+    # ------------------------------------------------------------------
+    def _preencher_abertas(self, j, tipo, pendentes):
+        """Best-fit: completa primeiro a sala aberta do mesmo tipo com MENOS folga,
+        concentrando o espaço livre em poucas salas."""
+        salas = self.escolas[j]["salas"]
+        abertas = [
+            (s["capacidade"] - s["ocupacao"], r) for r, s in enumerate(salas)
             if s["tipo_prova"] == tipo and s["ocupacao"] < s["capacidade"]
         ]
-        salas_livres = [
-            s for s in escola["salas"]
-            if s["tipo_prova"] is None and s["ocupacao"] < s["capacidade"]
-        ]
+        for _, r in sorted(abertas):
+            if not pendentes:
+                break
+            self._preencher_sala(j, r, pendentes)
 
-        # Se o tipo ainda não existe na escola, só podemos abrir sala para ele
-        # se houver espaço no limite K de tipos distintos.
-        if tipo not in escola["tipos_atribuidos"]:
-            if len(escola["tipos_atribuidos"]) >= self.K:
-                return []
-            return salas_compativeis + salas_livres
-        return salas_compativeis + salas_livres
+    def _escolher_sala_nova(self, j, demanda):
+        """Entre as salas livres de j: a MENOR com capacidade >= demanda;
+        se nenhuma comporta, a MAIOR (menos salas parcialmente ocupadas)."""
+        livres = [(s["capacidade"], r) for r, s in enumerate(self.escolas[j]["salas"])
+                  if s["ocupacao"] == 0 and s["capacidade"] > 0]
+        if not livres:
+            return None
+        suficientes = [x for x in livres if x[0] >= demanda]
+        if suficientes:
+            return min(suficientes)[1]
+        return max(livres)[1]
 
-    def _alocar(self, candidato, id_escola, sala):
-        id_c = candidato["id_estudante"]
-        tipo = candidato["tipo_prova"]
-        sala["ocupacao"] += 1
-        sala["candidatos"].append(id_c)
-        if sala["tipo_prova"] is None:
-            sala["tipo_prova"] = tipo
-        self.escolas[id_escola]["tipos_atribuidos"].add(tipo)
-        self.alocacoes[id_c] = (id_escola, sala["id_sala"])
-
-    def _construir_uma_vez(self, tentativa, rng):
-        self._reiniciar_estado()
-        candidatos_ordenados = self._ordenar_candidatos(rng, tentativa)
-
-        for candidato in candidatos_ordenados:
-            alocado = False
-            for id_escola in self._escolas_por_distancia(candidato, rng):
-                escola = self.escolas[id_escola]
-                for sala in self._salas_viaveis(escola, candidato["tipo_prova"]):
-                    self._alocar(candidato, id_escola, sala)
-                    alocado = True
-                    break
-                if alocado:
-                    break
-
-            if not alocado:
-                self.nao_alocados.append(candidato["id_estudante"])
-
-        self.solucao_viavel = len(self.nao_alocados) == 0 and len(self.alocacoes) == len(self.candidatos)
-        return self.solucao_viavel
-
-    def _validar_solucao(self):
-        """Confere as restrições da solução construída."""
-        if len(self.alocacoes) != len(self.candidatos):
+    def _deve_evitar(self, j, tipo, r, demanda):
+        """Look-ahead: abrir a sala r de j para 'tipo' consome o último slot de
+        tipo da escola e deixa muito espaço ocioso? Então vale tentar antes
+        outras escolas (na passada relaxada ela ainda poderá ser usada)."""
+        if self.limite_desperdicio is None or self.K < 2:
             return False
+        tipos = self.escolas[j]["tipos_atribuidos"]
+        consome_ultimo = tipo not in tipos and len(tipos) == self.K - 1
+        if not consome_ultimo:
+            return False
+        cap = self.escolas[j]["salas"][r]["capacidade"]
+        desperdicio = max(0, cap - demanda)
+        return desperdicio > self.limite_desperdicio * cap
 
-        tipos_por_escola = {}
-        candidatos_por_id = {c["id_estudante"]: c for c in self.candidatos}
-        for id_escola, escola in self.escolas.items():
-            tipos = set()
-            for sala in escola["salas"]:
-                if sala["ocupacao"] > sala["capacidade"]:
-                    return False
-                if sala["ocupacao"] != len(sala["candidatos"]):
-                    return False
-                if sala["ocupacao"] > 0:
-                    if sala["tipo_prova"] is None:
-                        return False
-                    tipos.add(sala["tipo_prova"])
-                    for id_c in sala["candidatos"]:
-                        candidato = candidatos_por_id[id_c]
-                        if candidato["tipo_prova"] != sala["tipo_prova"]:
-                            return False
-            if len(tipos) > self.K:
-                return False
-            tipos_por_escola[id_escola] = tipos
-        return True
+    def _alocar_unidade(self, u):
+        """Aloca a unidade; devolve a lista de candidatos que NÃO coube em lugar nenhum."""
+        tipo = u["tipo"]
+        pendentes = list(u["ids"])
+        for estrito in (True, False):          # 1ª passada com look-ahead, 2ª sem
+            for j in u["ordem"]:
+                if not pendentes:
+                    break
+                self._preencher_abertas(j, tipo, pendentes)
+                while pendentes and self._pode_abrir(j, tipo):
+                    r = self._escolher_sala_nova(j, len(pendentes))
+                    if r is None:
+                        break
+                    if estrito and self._deve_evitar(j, tipo, r, len(pendentes)):
+                        break
+                    self._preencher_sala(j, r, pendentes)
+            if not pendentes:
+                break
+        return pendentes
 
-    def resolver(self):
-        """Retorna (custo_total, alocacoes, nao_alocados).
+    # ------------------------------------------------------------------
+    # Passo 4: reparo por ejeção
+    # ------------------------------------------------------------------
+    def _ordem_candidato(self, i):
+        if i not in self._cache_ordem_cand:
+            d = self.dist[i]
+            self._cache_ordem_cand[i] = sorted(self._escolas_uteis, key=lambda j: d[j])
+        return self._cache_ordem_cand[i]
 
-        Se nenhuma tentativa construir uma solução completa e válida, custo_total
-        será None, alocacoes conterá a melhor tentativa parcial e nao_alocados
-        listará os candidatos que não foram alocados. A heurística usa múltiplas
-        tentativas com ordens diferentes como mecanismo de recuperação.
+    def _melhor_destino(self, i, proibida):
+        """Escola/sala mais próxima (≠ proibida) onde i cabe SEM novas ejeções."""
+        tipo = self._tipo_cand[i]
+        for j in self._ordem_candidato(i):
+            if j == proibida:
+                continue
+            salas = self.escolas[j]["salas"]
+            abertas = [(s["capacidade"] - s["ocupacao"], r) for r, s in enumerate(salas)
+                       if s["tipo_prova"] == tipo and s["ocupacao"] < s["capacidade"]]
+            if abertas:
+                return j, min(abertas)[1]
+            if self._pode_abrir(j, tipo):
+                livres = [(s["capacidade"], r) for r, s in enumerate(salas)
+                          if s["ocupacao"] == 0 and s["capacidade"] > 0]
+                if livres:
+                    return j, min(livres)[1]
+        return None
+
+    def _liberacao_permitida(self, j, r, tipo):
+        """Se a sala r de j for esvaziada, a escola pode receber 'tipo' (limite K)?"""
+        restantes = {s["tipo_prova"] for k, s in enumerate(self.escolas[j]["salas"])
+                     if k != r and s["ocupacao"] > 0}
+        return tipo in restantes or len(restantes) < self.K
+
+    def _desfazer(self, log):
+        """Reverte uma sequência de operações registradas (ordem inversa)."""
+        for item in reversed(log):
+            if item[0] == "novo":          # candidato da unidade colocado na sala
+                self._remover(item[1])
+            else:                          # ("mov", i, j_antigo, r_antigo)
+                _, i, j_old, r_old = item
+                self._remover(i)
+                self._colocar(i, j_old, r_old)
+
+    def _executar_ejecao(self, u, j, r, pendentes):
+        """Esvazia a sala r de j, realoca os ocupantes e aloca a unidade ali.
+
+        Retorna (delta_custo, log, pendentes_restantes) ou None se algum ocupante
+        não tiver para onde ir (nesse caso tudo é desfeito automaticamente).
         """
-        melhor_parcial = None
-        melhor_quantidade = -1
-        melhor_nao_alocados = None
+        sala = self.escolas[j]["salas"][r]
+        log, delta = [], 0.0
+        for i in list(sala["candidatos"]):
+            destino = self._melhor_destino(i, proibida=j)
+            if destino is None:
+                self._desfazer(log)
+                return None
+            jn, rn = destino
+            delta += self.dist[i][jn] - self.dist[i][j]
+            self._remover(i)
+            self._colocar(i, jn, rn)
+            log.append(("mov", i, j, r))
 
-        for tentativa in range(self.max_tentativas):
-            rng = random.Random(self.semente + tentativa)
-            viavel = self._construir_uma_vez(tentativa, rng)
+        restantes = list(pendentes)
+        antes = len(restantes)
+        self._preencher_sala(j, r, restantes)
+        for i in pendentes[len(restantes):antes]:
+            log.append(("novo", i))
+            delta += self.dist[i][j]
+        return delta, log, restantes
 
-            quantidade_alocada = len(self.alocacoes)
-            if quantidade_alocada > melhor_quantidade:
-                melhor_quantidade = quantidade_alocada
-                melhor_parcial = (
-                    dict(self.alocacoes),
-                    self._copiar_escolas(),
-                )
-                melhor_nao_alocados = list(self.nao_alocados)
+    def _reparar(self, u, pendentes):
+        """Tenta alocar 'pendentes' ejetando salas de outros tipos.
 
-            if viavel and self._validar_solucao():
-                custo_total = sum(
-                    float(self.distancias[id_c][id_e])
-                    for id_c, (id_e, _) in self.alocacoes.items()
-                )
-                return custo_total, self.alocacoes, []
+        Para cada (escola próxima, sala de outro tipo) SIMULA a ejeção, mede o
+        aumento de custo e desfaz; ao final executa a de menor aumento.
+        Modifica 'pendentes' in-place.
+        """
+        tipo = u["tipo"]
+        for _ in range(self.max_ejecoes):
+            if not pendentes:
+                return
+            melhor = None  # (delta, j, r)
+            for j in u["ordem"][:self.escolas_reparo]:
+                for r, sala in enumerate(self.escolas[j]["salas"]):
+                    if sala["ocupacao"] == 0 or sala["tipo_prova"] == tipo:
+                        continue
+                    if not self._liberacao_permitida(j, r, tipo):
+                        continue
+                    res = self._executar_ejecao(u, j, r, pendentes)
+                    if res is None:
+                        continue
+                    delta, log, _ = res
+                    self._desfazer(log)
+                    if melhor is None or delta < melhor[0]:
+                        melhor = (delta, j, r)
+            if melhor is None:
+                return                      # nenhum reparo possível
+            _, j, r = melhor
+            res = self._executar_ejecao(u, j, r, pendentes)
+            if res is None:
+                return
+            pendentes[:] = res[2]
 
-        # Restaura a tentativa parcial que alocou mais candidatos.
-        if melhor_parcial is not None:
-            self.alocacoes, self.escolas = melhor_parcial
-            self.nao_alocados = melhor_nao_alocados or []
-        self.solucao_viavel = False
+    # ------------------------------------------------------------------
+    # Ordem de processamento das unidades (regret + RCL)
+    # ------------------------------------------------------------------
+    def _ordenar_unidades(self, alfa):
+        """Regret decrescente (desempate: unidade maior primeiro).
+        Com alfa>0 sorteia o próximo entre as ceil(alfa*restantes) primeiras."""
+        base = sorted(self.unidades, key=lambda u: (-u["regret"], -len(u["ids"])))
+        if alfa <= 0:
+            return base
+        restantes, ordem = base, []
+        while restantes:
+            janela = max(1, math.ceil(alfa * len(restantes)))
+            ordem.append(restantes.pop(self.rng.randrange(janela)))
+        return ordem
 
-        # Não apresenta o custo parcial como se fosse uma solução completa.
-        return None, self.alocacoes, self.nao_alocados
+    # ------------------------------------------------------------------
+    # Execução principal
+    # ------------------------------------------------------------------
+    def resolver(self):
+        """Executa 'max_tentativas' construções e devolve a melhor.
 
-    def _copiar_escolas(self):
-        """Cópia independente do estado para preservar a melhor tentativa parcial."""
-        copia = {}
-        for id_escola, escola in self.escolas.items():
-            copia[id_escola] = {
-                "tipos_atribuidos": set(escola["tipos_atribuidos"]),
-                "salas": [
-                    {
-                        "id_sala": sala["id_sala"],
-                        "capacidade": sala["capacidade"],
-                        "ocupacao": sala["ocupacao"],
-                        "tipo_prova": sala["tipo_prova"],
-                        "candidatos": list(sala["candidatos"]),
-                    }
-                    for sala in escola["salas"]
-                ],
-            }
-        return copia
+        Critério: primeiro menos candidatos sem vaga, depois menor distância.
+        """
+        self._verificar_viabilidade_global()
+        for aviso in self.avisos:
+            print(f"[AVISO] {aviso}")
+
+        self.historico = []
+        melhor = None
+        for k in range(self.max_tentativas):
+            alfa = 0.0 if k == 0 else self.alfa   # 1ª tentativa determinística
+            inicio = time.perf_counter()
+            self._iniciar_estado()
+
+            nao_alocados = []
+            for u in self._ordenar_unidades(alfa):
+                pendentes = self._alocar_unidade(u)
+                if pendentes:
+                    self._reparar(u, pendentes)
+                nao_alocados.extend(pendentes)
+
+            custo = self._custo_atual()
+            self.historico.append({
+                "tentativa": k + 1, "alfa": alfa, "custo": custo,
+                "nao_alocados": len(nao_alocados),
+                "tempo_s": time.perf_counter() - inicio,
+            })
+
+            chave = (len(nao_alocados), custo)
+            if melhor is None or chave < melhor["chave"]:
+                melhor = {
+                    "chave": chave,
+                    "escolas": copy.deepcopy(self.escolas),
+                    "aloc": dict(self._aloc),
+                    "nao_alocados": list(nao_alocados),
+                    "custo": custo,
+                }
+
+        # Restaura a melhor tentativa em self.escolas (usado pelo main).
+        self.escolas = melhor["escolas"]
+        self._aloc = melhor["aloc"]
+        alocacoes = {
+            i: (j, self.escolas[j]["salas"][r]["id_sala"])
+            for i, (j, r) in self._aloc.items()
+        }
+        nao_alocados = melhor["nao_alocados"]
+        custo = melhor["custo"] if not nao_alocados else None
+        self.custo_parcial = melhor["custo"]
+        return custo, alocacoes, nao_alocados
+
+    def estatisticas(self):
+        """Resumo das tentativas (melhor, média e desvio-padrão) para o relatório."""
+        custos = [h["custo"] for h in self.historico if h["nao_alocados"] == 0]
+        if not custos:
+            return None
+        media = sum(custos) / len(custos)
+        desvio = math.sqrt(sum((c - media) ** 2 for c in custos) / len(custos))
+        return {"validas": len(custos), "melhor": min(custos), "pior": max(custos),
+                "media": media, "desvio": desvio}
