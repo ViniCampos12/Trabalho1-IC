@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 from algoritmo_construtivo import SolucaoConstrutiva
 from busca_local import BuscaLocal
+from avaliacao import AvaliacaoSolucao
 
 def ler_instancia_txt(caminho_arquivo):
     """Lê o formato TXT produzido por gerador_instancias.py.
@@ -247,6 +248,13 @@ def main():
     print(f"Máximo de tipos por escola (K): {args.max_tipos}")
     print(f"Tentativas: {args.tentativas}\n")
 
+    avaliador = AvaliacaoSolucao(
+        candidatos,
+        escolas,
+        matriz_distancias,
+        max_tipos_por_escola=args.max_tipos
+    )
+
     # 1. EXECUTA O ALGORITMO CONSTRUTIVO
     construtiva = SolucaoConstrutiva(
         candidatos,
@@ -268,16 +276,31 @@ def main():
         alocacoes_finais = alocacoes_iniciais
     else:
         print("Solução viável encontrada pelo Construtivo!")
-        print(f"Distância total inicial: {custo_inicial:.4f} km\n")
+
+        avaliacao_inicial = avaliador.avaliar(alocacoes_iniciais)
+        print("\nAvaliação da solução construtiva:")
+        print(f"Distância: {avaliacao_inicial['custo']:.4f} km")
+        print(f"Viável: {avaliacao_inicial['viavel']}")
+
+        for violacao in avaliacao_inicial["violacoes"]:
+            print(f" - {violacao}")
         
         # 2. EXECUTA A BUSCA LOCAL
         print("A iniciar a Busca Local...")
         busca = BuscaLocal(candidatos, escolas, matriz_distancias, alocacoes_iniciais, custo_inicial)
         custo_final, alocacoes_finais, iteracoes = busca.resolver()
         estado_escolas_final = busca.estado_escolas
+
+        avaliacao_final = avaliador.avaliar(alocacoes_finais)
+
+        print("\nAvaliação da solução final:")
+        print(f"Distância: {avaliacao_final['custo']:.4f} km")
+        print(f"Viável: {avaliacao_final['viavel']}")
+
+        for violacao in avaliacao_final["violacoes"]:
+            print(f" - {violacao}")
         
         print(f"Busca Local finalizada em {iteracoes} iterações de melhoria.")
-        print(f"Distância total final: {custo_final:.4f} km")
         print(f"Melhoria obtida: {(custo_inicial - custo_final):.4f} km\n")
 
         print("Ocupação por escola (Pós-Busca Local):")
