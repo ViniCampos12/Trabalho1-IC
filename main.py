@@ -1,4 +1,3 @@
-"""Ponto de entrada: lê a instância TXT, executa a heurística construtiva e a busca local."""
 import argparse
 from pathlib import Path
 from algoritmo_construtivo import SolucaoConstrutiva
@@ -6,7 +5,7 @@ from busca_local import BuscaLocal
 from avaliacao import AvaliacaoSolucao
 
 def ler_instancia_txt(caminho_arquivo):
-    """Lê o formato TXT produzido por gerador_instancias.py.
+    """
     Seções esperadas:
       # CANDIDATOS: id, CEP, tipo_prova, latitude, longitude
       # ESCOLAS: id, CEP, latitude, longitude, numero_salas, capacidades_salas
@@ -316,7 +315,7 @@ def main():
 
     caminho_saida = args.saida
     if caminho_saida is None:
-        caminho_saida = f"resultado_{caminho_instancia.stem}.txt"
+        caminho_saida = f"resultados/resultado_{caminho_instancia.stem}.txt"
 
     salvar_resultado(caminho_saida, custo_final, alocacoes_finais, nao_alocados, construtiva, estado_escolas_final)
     print(f"\nResultado detalhado guardado em: {Path(caminho_saida).resolve()}")

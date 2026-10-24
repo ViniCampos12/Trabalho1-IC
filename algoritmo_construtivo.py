@@ -1,13 +1,5 @@
 """
-Heurística construtiva para o Problema de Localização de Locais de Prova.
-
-Variante com SALAS:
-  * cada sala de cada escola recebe UM único tipo de prova;
-  * cada escola pode ter no máximo K tipos distintos entre suas salas;
-  * o algoritmo decide (i) quais escolas/salas usar, (ii) o tipo de cada sala
-    e (iii) a escola/sala de cada candidato, minimizando a distância total.
-
-Resumo da estratégia (ver relatório):
+Resumo da estratégia:
   1. Agrupa candidatos em "unidades de demanda" (CEP, tipo_prova).
   2. Ordena as unidades por ARREPENDIMENTO (regret): d(2ª escola) - d(1ª escola).
      Quem mais perde se não for atendido na melhor escola é atendido primeiro.
@@ -23,23 +15,12 @@ Resumo da estratégia (ver relatório):
   6. Múltiplas tentativas (GRASP): a 1ª é determinística; as demais sorteiam a
      próxima unidade dentro de uma Lista Restrita de Candidatos (RCL).
      Guarda-se a melhor tentativa.
-
-Interface (usada por main.py):
-    SolucaoConstrutiva(candidatos, escolas, matriz_distancias,
-                       max_tipos_por_escola, semente, max_tentativas)
-    .resolver() -> (custo | None, alocacoes, nao_alocados)
-        custo        : distância total (km) se TODOS foram alocados, senão None
-        alocacoes    : {id_candidato: (id_escola, id_sala)}
-        nao_alocados : lista de ids de candidatos sem vaga
-    .K, .candidatos, .escolas  (usados para imprimir/salvar o resultado)
-    .historico                 : estatísticas de cada tentativa (para o relatório)
 """
 
 import copy
 import math
 import random
 import time
-
 
 class SolucaoConstrutiva:
 
@@ -91,10 +72,6 @@ class SolucaoConstrutiva:
 
     def _construir_unidades(self):
         """Agrupa candidatos por (CEP, tipo) e calcula a ordem de escolas e o regret.
-
-        Candidatos com mesmo CEP estão no mesmo ponto, logo têm as mesmas
-        distâncias; usamos o primeiro do grupo como representante para ordenar
-        as escolas. O custo final, porém, é sempre somado candidato a candidato.
         """
         grupos = {}
         for c in self.candidatos:
@@ -287,11 +264,7 @@ class SolucaoConstrutiva:
                 self._colocar(i, j_old, r_old)
 
     def _executar_ejecao(self, u, j, r, pendentes):
-        """Esvazia a sala r de j, realoca os ocupantes e aloca a unidade ali.
-
-        Retorna (delta_custo, log, pendentes_restantes) ou None se algum ocupante
-        não tiver para onde ir (nesse caso tudo é desfeito automaticamente).
-        """
+        """Esvazia a sala r de j, realoca os ocupantes e aloca a unidade ali."""
         sala = self.escolas[j]["salas"][r]
         log, delta = [], 0.0
         for i in list(sala["candidatos"]):
@@ -417,7 +390,6 @@ class SolucaoConstrutiva:
         return custo, alocacoes, nao_alocados
 
     def estatisticas(self):
-        """Resumo das tentativas (melhor, média e desvio-padrão) para o relatório."""
         custos = [h["custo"] for h in self.historico if h["nao_alocados"] == 0]
         if not custos:
             return None

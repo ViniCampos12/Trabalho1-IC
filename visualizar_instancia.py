@@ -157,13 +157,13 @@ def gerar_visualizacao(nome_txt, nome_imagem):
 def main():
 
     gerar_visualizacao(
-        "instancia_1.txt",
-        "visualizacao_instancia_1.png"
+        "instancias/instancia_1.txt",
+        "visualizacoes/visualizacao_instancia_1.png"
     )
 
     gerar_visualizacao(
-        "instancia_2.txt",
-        "visualizacao_instancia_2.png"
+        "instancias/instancia_2.txt",
+        "visualizacoes/visualizacao_instancia_2.png"
     )
 
 
