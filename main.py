@@ -1,4 +1,5 @@
 import argparse
+import time
 from pathlib import Path
 from algoritmo_construtivo import SolucaoConstrutiva
 from busca_local import BuscaLocal
@@ -207,118 +208,117 @@ def salvar_resultado(caminho_saida, custo, alocacoes, nao_alocados, construtiva,
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Executa a heurística construtiva e busca local sobre uma instância TXT."
-    )
-    parser.add_argument(
-        "instancia", nargs="?", default="instancia_1.txt",
-        help="Caminho do arquivo TXT (padrão: instancia_1.txt)."
-    )
-    parser.add_argument(
-        "--max-tipos", type=int, default=2,
-        help="Máximo de tipos de prova por escola (padrão: 2)."
-    )
-    parser.add_argument(
-        "--tentativas", type=int, default=10,
-        help="Número de tentativas de construção (padrão: 10)."
-    )
-    parser.add_argument(
-        "--semente", type=int, default=42,
-        help="Semente aleatória para reproduzir o teste (padrão: 42)."
-    )
-    parser.add_argument(
-        "--saida", default=None,
-        help="Arquivo para guardar o resultado (padrão: resultado_<nome_instancia>.txt)."
-    )
-    args = parser.parse_args()
+    # Benchmark completo com 15 instâncias
+    instancias = [
+        # Testes Iniciais
+        # "instancia_2.txt", # Pequena (382 candidatos) - Exemplo passo a passo
+        # "instancia_1(2).txt", # Média (4213 candidatos) - Instância de validação
+        # "instancia_base.txt", # Média/Grande (4744 candidatos) - Comportamento padrão
+        # "instancia_diferenciada.txt", # Média/Grande (4374 candidatos) - Distribuição diferente
+        # "instancia_2_grande.txt" # Muito Grande (5287 candidatos) - Teste de stress
+        "instancia_1(3).txt",       # Pequena (316 cand.)
+        "instancia1.txt",           # Média/Pequena (2550 cand.)
+        "instancia2.txt",           # Média/Pequena (2550 cand.)
+        "instancia_1(1).txt",       # Média (3452 cand.)
+        "instancia_1(8).txt",       # Média (3531 cand.)
+        "instancia_2(3).txt",       # Média (3900 cand.)
+        "instancia_2(8).txt",       # Média (4131 cand.)
+        "instancia_A.txt",          # Média (4518 cand.)
+        "instancia_B.txt",          # Média (4442 cand.)
+        "instancia_1(4).txt",       # Média/Grande (4656 cand.)
+        "instancia_1(6).txt",       # Média/Grande (4656 cand.)
+        "instancia_3_extra.txt",    # Grande (5287 cand.)
+        "instancia_1(5).txt",       # Grande (5917 cand.)
+        "instancia_2(4).txt",       # Muito Grande (7038 cand.)
+        "instancia_2(6).txt"        # Muito Grande (7038 cand.)
+    ]
 
-    caminho_instancia = Path(args.instancia)
-    if not caminho_instancia.exists():
-        parser.error(
-            f"Arquivo de instância não encontrado: {caminho_instancia.resolve()}"
+    max_tipos = 2
+    tentativas = 10
+    semente = 42
+
+    print("="*70)
+    print("INÍCIO DOS EXPERIMENTOS EM LOTE (BENCHMARK ROBUSTO)")
+    print("="*70)
+
+    Path("resultados").mkdir(parents=True, exist_ok=True)
+
+    for nome_arquivo in instancias:
+        caminho_instancia = Path(nome_arquivo)
+        
+        print(f"\n{'='*70}")
+        print(f"--- A processar: {nome_arquivo} ---")
+        if not caminho_instancia.exists():
+            print(f"  [ERRO] Ficheiro não encontrado: {caminho_instancia}. Salte para o próximo.")
+            continue
+
+        # 1. Leitura da Instância (AGORA PROTEGIDA CONTRA ERROS DE FORMATAÇÃO)
+        try:
+            candidatos, escolas, matriz_distancias = ler_instancia_txt(caminho_instancia)
+        except Exception as e:
+            print(f"  [ERRO CRÍTICO] Falha ao ler o arquivo {nome_arquivo}.")
+            print(f"  Detalhe do erro: {e}")
+            print("  Ignorando esta instância e saltando para a próxima...")
+            continue # Pula para o próximo arquivo do loop
+        
+        avaliador = AvaliacaoSolucao(
+            candidatos,
+            escolas,
+            matriz_distancias,
+            max_tipos_por_escola=max_tipos
         )
 
-    candidatos, escolas, matriz_distancias = ler_instancia_txt(caminho_instancia)
+        # 2. Heurística Construtiva
+        tempo_inicio_construtivo = time.time()
+        construtiva = SolucaoConstrutiva(
+            candidatos, escolas, matriz_distancias,
+            max_tipos_por_escola=max_tipos, semente=semente, max_tentativas=tentativas
+        )
+        custo_inicial, alocacoes_iniciais, nao_alocados = construtiva.resolver()
+        tempo_fim_construtivo = time.time()
 
-    print(f"Instância carregada: {caminho_instancia}")
-    print(f"Candidatos: {len(candidatos)}")
-    print(f"Escolas: {len(escolas)}")
-    print(f"Distâncias carregadas: {sum(len(linha) for linha in matriz_distancias.values())}")
-    print(f"Máximo de tipos por escola (K): {args.max_tipos}")
-    print(f"Tentativas: {args.tentativas}\n")
-
-    avaliador = AvaliacaoSolucao(
-        candidatos,
-        escolas,
-        matriz_distancias,
-        max_tipos_por_escola=args.max_tipos
-    )
-
-    # 1. EXECUTA O ALGORITMO CONSTRUTIVO
-    construtiva = SolucaoConstrutiva(
-        candidatos,
-        escolas,
-        matriz_distancias,
-        max_tipos_por_escola=args.max_tipos,
-        semente=args.semente,
-        max_tentativas=args.tentativas,
-    )
-    custo_inicial, alocacoes_iniciais, nao_alocados = construtiva.resolver()
-
-    estado_escolas_final = None
-
-    if custo_inicial is None:
-        print("Não foi encontrada uma solução completa e viável.")
-        print(f"Candidatos alocados na melhor tentativa: {len(alocacoes_iniciais)}")
-        print(f"Candidatos não alocados: {len(nao_alocados)}")
-        custo_final = None
-        alocacoes_finais = alocacoes_iniciais
-    else:
-        print("Solução viável encontrada pelo Construtivo!")
+        if custo_inicial is None:
+            print("  [AVISO] Solução viável não encontrada na fase construtiva.")
+            print("  Possíveis causas: instâncias muito restritas (poucas vagas) ou limite de tipos de prova (K) muito baixo.")
+            continue
 
         avaliacao_inicial = avaliador.avaliar(alocacoes_iniciais)
-        print("\nAvaliação da solução construtiva:")
-        print(f"Distância: {avaliacao_inicial['custo']:.4f} km")
-        print(f"Viável: {avaliacao_inicial['viavel']}")
-
-        for violacao in avaliacao_inicial["violacoes"]:
-            print(f" - {violacao}")
         
-        # 2. EXECUTA A BUSCA LOCAL
-        print("A iniciar a Busca Local...")
+        # 3. Busca Local
+        tempo_inicio_busca = time.time()
         busca = BuscaLocal(candidatos, escolas, matriz_distancias, alocacoes_iniciais, custo_inicial)
         custo_final, alocacoes_finais, iteracoes = busca.resolver()
-        estado_escolas_final = busca.estado_escolas
-
+        tempo_fim_busca = time.time()
+        
         avaliacao_final = avaliador.avaliar(alocacoes_finais)
 
-        print("\nAvaliação da solução final:")
-        print(f"Distância: {avaliacao_final['custo']:.4f} km")
-        print(f"Viável: {avaliacao_final['viavel']}")
+        # 4. Cálculo de Métricas para o Relatório
+        melhoria = custo_inicial - custo_final
+        melhoria_perc = (melhoria / custo_inicial) * 100 if custo_inicial > 0 else 0
+        tempo_total = (tempo_fim_construtivo - tempo_inicio_construtivo) + (tempo_fim_busca - tempo_inicio_busca)
+        escolas_utilizadas = sum(1 for e in busca.estado_escolas.values() if sum(s["ocupacao"] for s in e["salas"].values()) > 0)
 
-        for violacao in avaliacao_final["violacoes"]:
-            print(f" - {violacao}")
+        # 5. Impressão dos Dados
+        print(f"\n  [MÉTRICAS - {nome_arquivo}]")
+        print(f"  Candidatos: {len(candidatos)} | Escolas Utilizadas: {escolas_utilizadas}/{len(escolas)}")
         
-        print(f"Busca Local finalizada em {iteracoes} iterações de melhoria.")
-        print(f"Melhoria obtida: {(custo_inicial - custo_final):.4f} km\n")
+        print(f"\n  -> Fase Construtiva:")
+        print(f"     Custo Inicial : {avaliacao_inicial['custo']:.4f} km")
+        print(f"     Viável?       : {'Sim' if avaliacao_inicial['viavel'] else 'Não'}")
 
-        print("Ocupação por escola (Pós-Busca Local):")
-        for id_escola, escola in estado_escolas_final.items():
-            ocupacao = sum(sala["ocupacao"] for sala in escola["salas"].values())
-            capacidade = sum(sala["capacidade"] for sala in escola["salas"].values())
-            tipos = sorted(set(sala["tipo_prova"] for sala in escola["salas"].values() if sala["tipo_prova"]))
-            if ocupacao:
-                print(
-                    f"  {id_escola}: {ocupacao}/{capacidade} candidatos; "
-                    f"tipos: {', '.join(tipos)}"
-                )
+        print(f"\n  -> Fase Busca Local:")
+        print(f"     Custo Final   : {avaliacao_final['custo']:.4f} km")
+        print(f"     Viável?       : {'Sim' if avaliacao_final['viavel'] else 'Não'}")
 
-    caminho_saida = args.saida
-    if caminho_saida is None:
+        print(f"\n  -> Resumo da Otimização:")
+        print(f"     Melhoria Obtida       : {melhoria:.4f} km ({melhoria_perc:.2f}%)")
+        print(f"     Iterações de Melhoria : {iteracoes}")
+        print(f"     Tempo de Execução     : {tempo_total:.2f} segundos")
+
+        # Guarda o resultado num ficheiro TXT
         caminho_saida = f"resultados/resultado_{caminho_instancia.stem}.txt"
-
-    salvar_resultado(caminho_saida, custo_final, alocacoes_finais, nao_alocados, construtiva, estado_escolas_final)
-    print(f"\nResultado detalhado guardado em: {Path(caminho_saida).resolve()}")
+        salvar_resultado(caminho_saida, custo_final, alocacoes_finais, nao_alocados, construtiva, busca.estado_escolas)
+        print(f"  [+] Detalhes guardados em: {caminho_saida}")
 
 if __name__ == "__main__":
     main()

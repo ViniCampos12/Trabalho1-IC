@@ -1,15 +1,15 @@
-# busca_local.py
 import copy
 import time
 
 class BuscaLocal:
     def __init__(self, candidatos, escolas, matriz_distancias, alocacoes_iniciais, custo_inicial, 
-                 max_escolas_vizinhas=3, ganho_minimo=0.05):
+                 max_escolas_vizinhas=3, ganho_minimo=0.05, verbose=False):
         self.candidatos = candidatos
         self.dist = matriz_distancias
         self.alocacoes = copy.deepcopy(alocacoes_iniciais)  # {id_cand: (id_escola, id_sala)}
         self.custo_atual = custo_inicial
         self.ganho_minimo = ganho_minimo  # Ganho mínimo de 50m
+        self.verbose = verbose # Controla a exibição dos logs no terminal
         
         self.tipo_cand = {c["id_estudante"]: c["tipo_prova"] for c in candidatos}
         
@@ -75,7 +75,9 @@ class BuscaLocal:
                                 s_antiga["tipo_prova"] = None
                                 
                             nova_sala["ocupacao"] += 1
-                            print(f"  [ITERAÇÃO {iteracao}] [SHIFT] Cand {id_cand}: {escola_atual} -> {nova_escola} | Ganho: {ganho:.4f} km | Custo: {self.custo_atual:.4f} km")
+                            
+                            if self.verbose:
+                                print(f"    [SHIFT] Cand {id_cand}: {escola_atual} -> {nova_escola} | Ganho: {ganho:.4f} km")
                             return True
         return False
 
@@ -112,18 +114,18 @@ class BuscaLocal:
                         self.cands_por_escola_tipo[(escola2_check, tipo1)].remove(id2)
                         self.cands_por_escola_tipo[(escola2_check, tipo1)].append(id1)
                         
-                        print(f"  [ITERAÇÃO {iteracao}] [SWAP] Troca {id1} ({escola1}) <-> {id2} ({escola2_check}) | Ganho: {ganho:.4f} km | Custo: {self.custo_atual:.4f} km")
+                        if self.verbose:
+                            print(f"    [SWAP] Troca {id1} ({escola1}) <-> {id2} ({escola2_check}) | Ganho: {ganho:.4f} km")
                         return True
         return False
 
     def resolver(self):
-        """Executa a busca local indexada com logs numerados no console."""
+        """Executa a busca local indexada."""
         melhoria = True
         iteracoes = 0
-        t0 = time.perf_counter()
         
-        print("\n=================== INICIANDO BUSCA LOCAL INDEXADA ===================")
-        print(f"Custo Inicial: {self.custo_atual:.4f} km\n")
+        if self.verbose:
+            print("\n  [Busca Local] Iniciando otimização...")
         
         while melhoria:
             iteracoes += 1
@@ -133,10 +135,7 @@ class BuscaLocal:
                 continue
             melhoria = False
             
-        tempo_exec = time.perf_counter() - t0
-        print(f"\n=====================================================================")
-        print(f"Busca Local concluída em {tempo_exec:.2f}s ({iteracoes} iterações).")
-        print(f"Custo Final: {self.custo_atual:.4f} km")
-        print(f"=====================================================================\n")
+        if self.verbose:
+            print(f"  [Busca Local] Concluída em {iteracoes} iterações.")
         
         return self.custo_atual, self.alocacoes, iteracoes
