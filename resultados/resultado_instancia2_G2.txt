@@ -1,0 +1,135 @@
+STATUS: SOLUCAO VIAVEL
+DISTANCIA TOTAL (km): 913.1260
+CANDIDATOS ALOCADOS: 109
+CANDIDATOS NAO ALOCADOS: 0
+MAX_TIPOS_POR_ESCOLA: 2
+
+# ALOCACOES (id_estudante, id_escola, id_sala, tipo_prova)
+C1, E5, E5-S2, M3e
+C10, E2, E2-S1, M1
+C100, E3, E3-S3, M1
+C101, E4, E4-S2, M3d
+C102, E3, E3-S2, M1
+C103, E3, E3-S1, M2
+C104, E2, E2-S2, M2
+C105, E2, E2-S2, M2
+C106, E4, E4-S3, M3s
+C107, E3, E3-S2, M1
+C108, E3, E3-S3, M1
+C109, E5, E5-S1, M3h
+C11, E1, E1-S2, M3s
+C12, E5, E5-S1, M3h
+C13, E1, E1-S1, M2
+C14, E1, E1-S1, M2
+C15, E5, E5-S2, M3e
+C16, E5, E5-S2, M3e
+C17, E5, E5-S2, M3e
+C18, E1, E1-S2, M3s
+C19, E5, E5-S2, M3e
+C2, E2, E2-S1, M1
+C20, E2, E2-S2, M2
+C21, E2, E2-S2, M2
+C22, E2, E2-S2, M2
+C23, E1, E1-S2, M3s
+C24, E5, E5-S1, M3h
+C25, E5, E5-S1, M3h
+C26, E5, E5-S1, M3h
+C27, E2, E2-S1, M1
+C28, E2, E2-S1, M1
+C29, E2, E2-S1, M1
+C3, E2, E2-S1, M1
+C30, E1, E1-S1, M2
+C31, E5, E5-S2, M3e
+C32, E2, E2-S2, M2
+C33, E2, E2-S1, M1
+C34, E5, E5-S2, M3e
+C35, E5, E5-S1, M3h
+C36, E4, E4-S2, M3d
+C37, E5, E5-S1, M3h
+C38, E2, E2-S1, M1
+C39, E2, E2-S2, M2
+C4, E1, E1-S1, M2
+C40, E4, E4-S2, M3d
+C41, E5, E5-S2, M3e
+C42, E4, E4-S2, M3d
+C43, E1, E1-S1, M2
+C44, E5, E5-S2, M3e
+C45, E1, E1-S2, M3s
+C46, E1, E1-S2, M3s
+C47, E5, E5-S2, M3e
+C48, E1, E1-S1, M2
+C49, E2, E2-S1, M1
+C5, E4, E4-S2, M3d
+C50, E1, E1-S1, M2
+C51, E1, E1-S1, M2
+C52, E2, E2-S1, M1
+C53, E5, E5-S1, M3h
+C54, E2, E2-S1, M1
+C55, E2, E2-S1, M1
+C56, E3, E3-S3, M1
+C57, E2, E2-S2, M2
+C58, E4, E4-S3, M3s
+C59, E3, E3-S1, M2
+C6, E2, E2-S1, M1
+C60, E3, E3-S2, M1
+C61, E2, E2-S2, M2
+C62, E3, E3-S2, M1
+C63, E2, E2-S2, M2
+C64, E3, E3-S1, M2
+C65, E3, E3-S1, M2
+C66, E3, E3-S2, M1
+C67, E2, E2-S2, M2
+C68, E4, E4-S3, M3s
+C69, E4, E4-S1, M3d
+C7, E5, E5-S2, M3e
+C70, E5, E5-S1, M3h
+C71, E4, E4-S3, M3s
+C72, E3, E3-S2, M1
+C73, E4, E4-S2, M3d
+C74, E3, E3-S1, M2
+C75, E4, E4-S3, M3s
+C76, E3, E3-S3, M1
+C77, E3, E3-S2, M1
+C78, E4, E4-S1, M3d
+C79, E4, E4-S1, M3d
+C8, E5, E5-S2, M3e
+C80, E5, E5-S2, M3e
+C81, E4, E4-S1, M3d
+C82, E3, E3-S1, M2
+C83, E4, E4-S2, M3d
+C84, E3, E3-S2, M1
+C85, E5, E5-S1, M3h
+C86, E4, E4-S3, M3s
+C87, E5, E5-S1, M3h
+C88, E5, E5-S2, M3e
+C89, E2, E2-S2, M2
+C9, E5, E5-S1, M3h
+C90, E3, E3-S2, M1
+C91, E4, E4-S3, M3s
+C92, E4, E4-S1, M3d
+C93, E3, E3-S2, M1
+C94, E3, E3-S1, M2
+C95, E5, E5-S1, M3h
+C96, E3, E3-S2, M1
+C97, E5, E5-S1, M3h
+C98, E4, E4-S2, M3d
+C99, E4, E4-S3, M3s
+
+# RESUMO_POR_ESCOLA
+E1: ocupacao=13/16; tipos=M2,M3s
+  sala E1-S1: tipo=M2; ocupacao=8/8
+  sala E1-S2: tipo=M3s; ocupacao=5/8
+E2: ocupacao=25/27; tipos=M1,M2
+  sala E2-S1: tipo=M1; ocupacao=13/15
+  sala E2-S2: tipo=M2; ocupacao=12/12
+E3: ocupacao=22/22; tipos=M1,M2
+  sala E3-S1: tipo=M2; ocupacao=7/7
+  sala E3-S2: tipo=M1; ocupacao=11/11
+  sala E3-S3: tipo=M1; ocupacao=4/4
+E4: ocupacao=21/26; tipos=M3d,M3s
+  sala E4-S1: tipo=M3d; ocupacao=5/5
+  sala E4-S2: tipo=M3d; ocupacao=8/12
+  sala E4-S3: tipo=M3s; ocupacao=8/9
+E5: ocupacao=28/30; tipos=M3e,M3h
+  sala E5-S1: tipo=M3h; ocupacao=14/16
+  sala E5-S2: tipo=M3e; ocupacao=14/14
