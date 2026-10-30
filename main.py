@@ -1,5 +1,6 @@
 import argparse
 import time
+import math
 from pathlib import Path
 from algoritmo_construtivo import SolucaoConstrutiva
 from busca_local import BuscaLocal
@@ -145,6 +146,25 @@ def ler_instancia_txt(caminho_arquivo):
     return candidatos, escolas, matriz_distancias
 
 
+def calcular_metricas_escolas(alocacoes, estado_escolas):
+    """Calcula quantidade de escolas ativadas e ocupação média sobre as escolas ativadas."""
+    escolas_utilizadas = set()
+    vagas_totais_ativadas = 0
+    alocados_totais = len(alocacoes)
+
+    for id_candidato, (id_escola, _) in alocacoes.items():
+        escolas_utilizadas.add(id_escola)
+
+    for id_escola in escolas_utilizadas:
+        escola_info = estado_escolas[id_escola]
+        salas = escola_info["salas"].values() if isinstance(escola_info["salas"], dict) else escola_info["salas"]
+        for sala in salas:
+            vagas_totais_ativadas += sala["capacidade"]
+
+    ocupacao_media = (alocados_totais / vagas_totais_ativadas * 100) if vagas_totais_ativadas > 0 else 0.0
+    return len(escolas_utilizadas), ocupacao_media
+
+
 def salvar_resultado(caminho_saida, custo, alocacoes, nao_alocados, construtiva, estado_escolas=None):
     """Salva resumo e alocações para inspeção posterior."""
     with open(caminho_saida, "w", encoding="utf-8") as arquivo:
@@ -175,7 +195,6 @@ def salvar_resultado(caminho_saida, custo, alocacoes, nao_alocados, construtiva,
             for id_candidato in nao_alocados:
                 arquivo.write(f"{id_candidato}\n")
 
-        # Usa o estado atualizado da busca local, se fornecido. Caso contrário, usa o do construtivo.
         escolas_finais = estado_escolas if estado_escolas else construtiva.escolas
         
         arquivo.write("\n# RESUMO_POR_ESCOLA\n")
@@ -193,10 +212,7 @@ def salvar_resultado(caminho_saida, custo, alocacoes, nao_alocados, construtiva,
                 f"tipos={','.join(tipos) if tipos else 'nenhum'}\n"
             )
 
-            if estado_escolas:
-                salas_iter = escola["salas"].values()
-            else:
-                salas_iter = escola["salas"]
+            salas_iter = escola["salas"].values() if estado_escolas else escola["salas"]
                 
             for sala in salas_iter:
                 if sala["ocupacao"] > 0:
@@ -252,6 +268,8 @@ def executar_instancia(caminho_instancia, max_tipos, tentativas, semente):
     custo_final, alocacoes_finais, iteracoes = busca.resolver()
     avaliacao_final = avaliador.avaliar(alocacoes_finais)
 
+    num_escolas, ocupacao_med = calcular_metricas_escolas(alocacoes_finais, busca.estado_escolas)
+
     return {
         "custo": avaliacao_final["custo"],
         "custo_inicial": avaliacao_inicial["custo"],
@@ -269,12 +287,31 @@ def executar_instancia(caminho_instancia, max_tipos, tentativas, semente):
         "nao_alocados_ids": nao_alocados,
         "estado_escolas": busca.estado_escolas,
         "viavel": avaliacao_final["viavel"],
+        "escolas_utilizadas": num_escolas,
+        "ocupacao_media": ocupacao_med
     }
 
 
 def main():
-    # Benchmark completo com 15 instâncias
+    parser = argparse.ArgumentParser(description="Otimização da Alocação de Candidatos a Locais de Prova")
+    parser.add_argument(
+        "--max_tipos", 
+        type=int, 
+        default=2, 
+        choices=[1, 2],
+        help="Número máximo de tipos de prova permitidos por escola (1 ou 2). Padrão: 2"
+    )
+    args = parser.parse_args()
+
     instancias = [
+        # Série 1
+        "instancias/instancia1_G1.txt",
+        "instancias/instancia1_G2.txt",
+        "instancias/instancia1_G3.txt",
+        "instancias/instancia1_G4.txt",
+        "instancias/instancia1_G5.txt",
+        "instancias/instancia1_G6.txt",
+        "instancias/instancia1_G7.txt",
         "instancias/instancia1_G8.txt",
         "instancias/instancia1_G9.txt",
         "instancias/instancia1_G10.txt",
@@ -282,6 +319,7 @@ def main():
         "instancias/instancia1_G12.txt",
         "instancias/instancia_1_G13.txt",
         "instancias/instancia_1_G14.txt",
+        # Série 2
         "instancias/instancia2_G1.txt",
         "instancias/instancia2_G2.txt",
         "instancias/instancia2_G3.txt",
@@ -289,26 +327,34 @@ def main():
         "instancias/instancia2_G5.txt",
         "instancias/instancia2_G6.txt",
         "instancias/instancia2_G7.txt",
+        "instancias/instancia2_G8.txt",
+        "instancias/instancia2_G9.txt",
+        "instancias/instancia2_G10.txt",
+        "instancias/instancia2_G11.txt",
+        "instancias/instancia2_G12.txt",
+        "instancias/instancia_2_G13.txt",
+        "instancias/instancia_2_G14.txt",
     ]
 
-    max_tipos = 2
+    max_tipos = args.max_tipos
     execucoes = 10
     tentativas = 10
     semente = 42
 
-    print("="*70)
+    print("=" * 85)
     print("INÍCIO DOS EXPERIMENTOS EM LOTE (BENCHMARK ROBUSTO)")
-    print("="*70)
+    print(f"PARÂMETRO SELECIONADO: MAX_TIPOS_POR_ESCOLA (K) = {max_tipos}")
+    print("=" * 85)
 
     Path("resultados").mkdir(parents=True, exist_ok=True)
 
     for nome_arquivo in instancias:
         caminho_instancia = Path(nome_arquivo)
         
-        print(f"\n{'='*70}")
-        print(f"--- A processar: {nome_arquivo} ---")
+        print(f"\n{'=' * 85}")
+        print(f"--- Processando: {nome_arquivo} ---")
         if not caminho_instancia.exists():
-            print(f"  [ERRO] Ficheiro não encontrado: {caminho_instancia}. Salte para o próximo.")
+            print(f"  [ERRO] Ficheiro não encontrado: {caminho_instancia}. Saltando para o próximo.")
             continue
 
         resultados = []
@@ -322,8 +368,7 @@ def main():
                 )
             except Exception as erro:
                 print(
-                    f"  [ERRO] Execução {numero_execucao}/{execucoes} "
-                    f"falhou: {erro}"
+                    f"  [ERRO] Execução {numero_execucao:02d}/{execucoes} falhou: {erro}"
                 )
                 continue
 
@@ -331,37 +376,47 @@ def main():
             if resultado["custo"] is None:
                 print(
                     f"  Execução {numero_execucao:02d}/{execucoes}: "
-                    f"solução inviável | tempo={resultado['tempo_s']:.2f}s"
+                    f"Solução INVIÁVEL | tempo={resultado['tempo_s']:.2f}s"
                 )
             else:
                 print(
                     f"  Execução {numero_execucao:02d}/{execucoes}: "
-                    f"resultado={resultado['custo']:.4f} km | "
-                    f"tempo={resultado['tempo_s']:.2f}s"
+                    f"Custo Inicial={resultado['custo_inicial']:.2f} km -> "
+                    f"Melhor Custo={resultado['custo']:.2f} km | "
+                    f"Ganho={resultado['melhoria_perc']:.2f}% ({resultado['melhoria']:.2f} km) | "
+                    f"Escolas={resultado['escolas_utilizadas']} | "
+                    f"Ocupação={resultado['ocupacao_media']:.2f}% | "
+                    f"Tempo={resultado['tempo_s']:.2f}s"
                 )
 
-        resultados_validos = [
-            resultado for resultado in resultados
-            if resultado["custo"] is not None
-        ]
+        resultados_validos = [r for r in resultados if r["custo"] is not None]
+        
         if not resultados_validos:
-            print("  [AVISO] Nenhuma execução encontrou solução viável.")
+            print(f"\n  [RESUMO - {nome_arquivo}]")
+            print(f"  Status: INVIÁVEL (0/{execucoes} execuções viáveis)")
             continue
 
-        melhor = min(resultados_validos, key=lambda resultado: resultado["custo"])
-        media_resultado = sum(
-            resultado["custo"] for resultado in resultados_validos
-        ) / len(resultados_validos)
-        tempo_medio = sum(
-            resultado["tempo_s"] for resultado in resultados
-        ) / len(resultados)
+        melhor = min(resultados_validos, key=lambda r: r["custo"])
+        custos = [r["custo"] for r in resultados_validos]
+        custo_medio = sum(custos) / len(custos)
+        
+        # Cálculo do Desvio Padrão
+        variancia = sum((c - custo_medio) ** 2 for c in custos) / len(custos)
+        desvio_padrao = math.sqrt(variancia)
+        
+        tempo_medio = sum(r["tempo_s"] for r in resultados) / len(resultados)
 
-        print(f"\n  [RESUMO - {nome_arquivo}]")
-        print(f"  Execuções concluídas: {len(resultados)}/{execucoes}")
-        print(f"  Execuções viáveis: {len(resultados_validos)}/{execucoes}")
-        print(f"  Melhor resultado: {melhor['custo']:.4f} km")
-        print(f"  Média dos resultados viáveis: {media_resultado:.4f} km")
-        print(f"  Tempo médio de execução: {tempo_medio:.4f} segundos")
+        print(f"\n  [RESUMO CONSOLIDADO - {nome_arquivo}]")
+        print(f"  Candidatos Processados: {melhor['candidatos']}")
+        print(f"  Taxa de Sucesso (Viabilidade): {len(resultados_validos)}/{execucoes} execuções ({len(resultados_validos)/execucoes*100:.1f}%)")
+        print(f"  Custo Inicial (Melhor Execução): {melhor['custo_inicial']:.2f} km")
+        print(f"  Melhor Custo Encontrado: {melhor['custo']:.2f} km")
+        print(f"  Custo Médio: {custo_medio:.2f} km")
+        print(f"  Desvio Padrão: {desvio_padrao:.2f} km ({(desvio_padrao/custo_medio*100 if custo_medio > 0 else 0):.2f}%)")
+        print(f"  Melhoria Obtida: {melhor['melhoria']:.2f} km ({melhor['melhoria_perc']:.2f}%)")
+        print(f"  Escolas Utilizadas: {melhor['escolas_utilizadas']}")
+        print(f"  Ocupação Média (Escolas Ativadas): {melhor['ocupacao_media']:.2f}%")
+        print(f"  Tempo Médio de Execução: {tempo_medio:.2f}s")
 
         caminho_saida = f"resultados/resultado_{caminho_instancia.stem}.txt"
         salvar_resultado(
@@ -372,7 +427,7 @@ def main():
             melhor["construtiva"],
             melhor["estado_escolas"]
         )
-        print(f"  [+] Detalhes da melhor execução guardados em: {caminho_saida}")
+        print(f"  [+] Solução detalhada salva em: {caminho_saida}")
 
 if __name__ == "__main__":
     main()
